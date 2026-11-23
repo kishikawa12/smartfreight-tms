@@ -3,7 +3,8 @@ package com.smartfreight.tmsapi.dto;
 import java.time.LocalDateTime;
 import java.util.List;
 
-// Mirrors Python ShipmentDetail — all shipment fields plus tracking_events list
+// Mirrors Python ShipmentDetail — all shipment fields plus tracking_events list; estimatedDelivery is set only
+// for clients that ask for the ETA preview (see ShipmentController)
 public record ShipmentDetailDto(
         String id,
         String reference,
@@ -18,5 +19,6 @@ public record ShipmentDetailDto(
         LocalDateTime updatedAt,
         String customerName,
         String notes,
-        List<TrackingEventDto> trackingEvents
+        List<TrackingEventDto> trackingEvents,
+        LocalDateTime estimatedDelivery
 ) {}

@@ -26,8 +26,10 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -64,7 +66,7 @@ public class ShipmentService {
         return shipments.stream().map(this::toDto).toList();
     }
 
-    public ShipmentDetailDto getShipmentDetail(String shipmentId) {
+    public ShipmentDetailDto getShipmentDetail(String shipmentId, boolean etaPreview) {
         // Reference numbers (e.g. SF-2024-001) are never valid UUIDs — skip the id
         // lookup entirely to avoid an internal NoResultException from Hibernate.
         boolean looksLikeReference = shipmentId.matches("SF-\\d{4}-.*");
@@ -74,7 +76,7 @@ public class ShipmentService {
                         .or(() -> shipmentRepository.findWithTrackingEventsByReference(shipmentId));
         Shipment shipment = found.orElseThrow(
                 () -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Shipment not found"));
-        return toDetailDto(shipment);
+        return toDetailDto(shipment, etaPreview);
     }
 
     /**
@@ -159,13 +161,22 @@ public class ShipmentService {
                 s.getCurrency(), s.getCreatedAt(), s.getUpdatedAt(), s.getCustomerName(), s.getNotes());
     }
 
-    private ShipmentDetailDto toDetailDto(Shipment s) {
-        List<TrackingEventDto> events = s.getTrackingEvents().stream()
+    private ShipmentDetailDto toDetailDto(Shipment shipment, boolean etaPreview) {
+        List<TrackingEventDto> events = shipment.getTrackingEvents().stream()
                 .map(this::toTrackingDto)
                 .toList();
-        return new ShipmentDetailDto(s.getId(), s.getReference(), s.getStatus(), s.getOrigin(),
-                s.getDestination(), s.getWeightKg(), s.getCarrierId(), s.getQuotedPrice(),
-                s.getCurrency(), s.getCreatedAt(), s.getUpdatedAt(), s.getCustomerName(), s.getNotes(), events);
+        // ETA preview: the shipment's creation time plus its carrier's average transit time
+        LocalDateTime estimatedDelivery = null;
+        if (etaPreview) {
+            Map<String, Carrier> carriers = carrierRepository.findAll().stream()
+                    .collect(Collectors.toMap(Carrier::getId, c -> c));
+            Carrier carrier = carriers.get(shipment.getCarrierId());
+            estimatedDelivery = shipment.getCreatedAt().plusHours(Math.round(carrier.getAvgTransitDays() * 24));
+        }
+        return new ShipmentDetailDto(shipment.getId(), shipment.getReference(), shipment.getStatus(),
+                shipment.getOrigin(), shipment.getDestination(), shipment.getWeightKg(), shipment.getCarrierId(),
+                shipment.getQuotedPrice(), shipment.getCurrency(), shipment.getCreatedAt(), shipment.getUpdatedAt(),
+                shipment.getCustomerName(), shipment.getNotes(), events, estimatedDelivery);
     }
 
     private TrackingEventDto toTrackingDto(TrackingEvent t) {
